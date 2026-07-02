@@ -202,7 +202,6 @@
       const SANYA_LAT = 18.3;
       const SANYA_LON = 109.6;
       const TEXTURE_URL = "./assets/nasa_blue_marble_2004_12_5400x2700.jpg";
-      const RADAR_IMAGE_URL = "./assets/sanya_radar_array.png";
 
       const app = document.querySelector("#app");
       const scene = new THREE.Scene();
@@ -863,22 +862,114 @@
       }
       meridianGroup.add(makeTubeLine(meridianPoints, 0xffd84d, 7, 0.95));
 
-      function makeSanyaRadar(texture) {
-        texture.colorSpace = THREE.SRGBColorSpace;
-        texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
-        const material = new THREE.SpriteMaterial({
-          map: texture,
-          transparent: true,
-          alphaTest: 0.03,
-          depthTest: false,
-          depthWrite: false,
+      function makeSanyaRadar() {
+        const radar = new THREE.Group();
+        const baseZ = curvedGroundZ(0, 0);
+        radar.position.set(0, 0, baseZ);
+
+        const deckWidth = 220;
+        const deckDepth = 132;
+        const deckZ = 5;
+        const deckThickness = 3;
+        const white = new THREE.Color(0xf7f7f2);
+        const dark = new THREE.Color(0x2f3431);
+
+        const deckMaterial = new THREE.MeshStandardMaterial({
+          color: 0xe8e8e0,
+          roughness: 0.72,
+          metalness: 0.06,
         });
-        const sprite = new THREE.Sprite(material);
-        sprite.center.set(0.5, 0.0);
-        sprite.scale.set(220, 87, 1);
-        sprite.position.set(0, 0, curvedGroundZ(0, 0) + 4);
-        sprite.renderOrder = 1020;
-        sanyaGroup.add(sprite);
+        const edgeMaterial = new THREE.MeshStandardMaterial({
+          color: 0xffffff,
+          roughness: 0.58,
+          metalness: 0.1,
+        });
+        const shadowMaterial = new THREE.MeshStandardMaterial({
+          color: 0x6e746f,
+          roughness: 0.85,
+          metalness: 0.03,
+        });
+
+        const deck = new THREE.Mesh(new THREE.BoxGeometry(deckWidth, deckDepth, deckThickness), deckMaterial);
+        deck.position.z = deckZ;
+        radar.add(deck);
+
+        function addBox(x, y, z, sx, sy, sz, material = edgeMaterial) {
+          const mesh = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), material);
+          mesh.position.set(x, y, z);
+          radar.add(mesh);
+          return mesh;
+        }
+
+        addBox(0, -deckDepth / 2, deckZ + 2, deckWidth + 8, 3, 4);
+        addBox(0, deckDepth / 2, deckZ + 2, deckWidth + 8, 3, 4);
+        addBox(-deckWidth / 2, 0, deckZ + 2, 3, deckDepth + 8, 4);
+        addBox(deckWidth / 2, 0, deckZ + 2, 3, deckDepth + 8, 4);
+
+        for (const x of [-96, -48, 0, 48, 96]) {
+          for (const y of [-54, 0, 54]) {
+            addBox(x, y, -6, 4, 4, 24, edgeMaterial);
+          }
+        }
+        for (const x of [-96, -48, 0, 48, 96]) {
+          addBox(x, -deckDepth / 2 - 8, -8, 12, 10, 20, shadowMaterial);
+          addBox(x, deckDepth / 2 + 8, -8, 12, 10, 20, shadowMaterial);
+        }
+
+        const letterRows = [
+          "111010101111011101110",
+          "100010100010100001001",
+          "100010100010100001001",
+          "111001000010111001110",
+          "001001000010001001010",
+          "001001000010001001001",
+          "111001000111111001001",
+        ];
+        const letterCols = letterRows[0].length;
+        const letterRowsCount = letterRows.length;
+        const cols = 31;
+        const rows = 19;
+        const elementRadius = 2.7;
+        const elementGeometry = new THREE.SphereGeometry(elementRadius, 12, 8);
+        const elementMaterial = new THREE.MeshStandardMaterial({
+          color: 0xffffff,
+          roughness: 0.42,
+          metalness: 0.02,
+        });
+        const elements = new THREE.InstancedMesh(elementGeometry, elementMaterial, cols * rows);
+        elements.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        elements.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cols * rows * 3), 3);
+
+        const matrix = new THREE.Matrix4();
+        let index = 0;
+        for (let row = 0; row < rows; row += 1) {
+          for (let col = 0; col < cols; col += 1) {
+            const x = -deckWidth * 0.42 + (col / (cols - 1)) * deckWidth * 0.84;
+            const y = -deckDepth * 0.37 + (row / (rows - 1)) * deckDepth * 0.74;
+            matrix.makeTranslation(x, y, deckZ + 4.2);
+            elements.setMatrixAt(index, matrix);
+
+            const letterCol = Math.floor(((col - 5) / 21) * letterCols);
+            const letterRow = Math.floor(((rows - 1 - row - 6) / 7) * letterRowsCount);
+            const isLetter = (
+              letterCol >= 0
+              && letterCol < letterCols
+              && letterRow >= 0
+              && letterRow < letterRowsCount
+              && letterRows[letterRow][letterCol] === "1"
+            );
+            elements.setColorAt(index, isLetter ? dark : white);
+            index += 1;
+          }
+        }
+        elements.renderOrder = 1030;
+        radar.add(elements);
+
+        const feedMaterial = new THREE.MeshBasicMaterial({ color: 0x0b0d0c, transparent: true, opacity: 0.2 });
+        addBox(0, 0, deckZ + 3.9, deckWidth * 0.5, deckDepth * 0.28, 0.4, feedMaterial);
+
+        radar.renderOrder = 1020;
+        sanyaGroup.add(radar);
       }
 
       function makeTextSprite(text, color = "#ffffff", size = 44) {
@@ -1162,7 +1253,7 @@
       });
 
       new THREE.TextureLoader().load(TEXTURE_URL, makeEarthPatch);
-      new THREE.TextureLoader().load(RADAR_IMAGE_URL, makeSanyaRadar);
+      makeSanyaRadar();
       fRegionGroup.visible = document.querySelector("#fRegionToggle").checked;
       beamGroup.visible = document.querySelector("#beamToggle").checked;
       photoelectronGroup.visible = document.querySelector("#photoelectronToggle").checked;
