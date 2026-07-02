@@ -202,6 +202,7 @@
       const SANYA_LAT = 18.3;
       const SANYA_LON = 109.6;
       const TEXTURE_URL = "./assets/nasa_blue_marble_2004_12_5400x2700.jpg";
+      const RADAR_IMAGE_URL = "./assets/sanya_radar_array.png";
 
       const app = document.querySelector("#app");
       const scene = new THREE.Scene();
@@ -862,13 +863,23 @@
       }
       meridianGroup.add(makeTubeLine(meridianPoints, 0xffd84d, 7, 0.95));
 
-      const sanyaMarkerRadius = 28;
-      const sanyaDot = new THREE.Mesh(
-        new THREE.SphereGeometry(sanyaMarkerRadius, 32, 16),
-        new THREE.MeshBasicMaterial({ color: 0xff3b30 }),
-      );
-      sanyaDot.position.set(0, 0, curvedGroundZ(0, 0) + sanyaMarkerRadius * 0.45);
-      sanyaGroup.add(sanyaDot);
+      function makeSanyaRadar(texture) {
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+        const material = new THREE.SpriteMaterial({
+          map: texture,
+          transparent: true,
+          alphaTest: 0.03,
+          depthTest: false,
+          depthWrite: false,
+        });
+        const sprite = new THREE.Sprite(material);
+        sprite.center.set(0.5, 0.0);
+        sprite.scale.set(220, 87, 1);
+        sprite.position.set(0, 0, curvedGroundZ(0, 0) + 4);
+        sprite.renderOrder = 1020;
+        sanyaGroup.add(sprite);
+      }
 
       function makeTextSprite(text, color = "#ffffff", size = 44) {
         const canvas = document.createElement("canvas");
@@ -887,10 +898,6 @@
         sprite.scale.set(canvas.width * 1.6, canvas.height * 1.6, 1);
         return sprite;
       }
-
-      const sanyaLabel = makeTextSprite("Sanya", "#ffffff", 34);
-      sanyaLabel.position.set(105, 25, 64);
-      sanyaGroup.add(sanyaLabel);
 
       const meridianLabel = makeTextSprite("magnetic meridian", "#ffd84d", 32);
       meridianLabel.position.set(40, 1550, 145);
@@ -1155,6 +1162,7 @@
       });
 
       new THREE.TextureLoader().load(TEXTURE_URL, makeEarthPatch);
+      new THREE.TextureLoader().load(RADAR_IMAGE_URL, makeSanyaRadar);
       fRegionGroup.visible = document.querySelector("#fRegionToggle").checked;
       beamGroup.visible = document.querySelector("#beamToggle").checked;
       photoelectronGroup.visible = document.querySelector("#photoelectronToggle").checked;
