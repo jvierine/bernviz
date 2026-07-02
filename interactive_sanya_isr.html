@@ -29,6 +29,7 @@
         position: fixed;
         left: 16px;
         bottom: 16px;
+        box-sizing: border-box;
         display: grid;
         gap: 10px;
         width: min(310px, calc(100vw - 32px));
@@ -43,6 +44,7 @@
         position: absolute;
         right: 10px;
         top: 10px;
+        box-sizing: border-box;
         width: 34px;
         height: 34px;
         padding: 3px;
@@ -65,7 +67,9 @@
         height: 58px;
         padding: 6px;
         gap: 0;
-        border-radius: 50%;
+        border: 0;
+        background: transparent;
+        backdrop-filter: none;
         cursor: move;
       }
 
@@ -168,7 +172,7 @@
         <label><input id="altitudeToggle" type="checkbox" checked /> Altitude</label>
         <label><input id="sanyaToggle" type="checkbox" checked /> Sanya</label>
         <label><input id="fRegionToggle" type="checkbox" checked /> F-region</label>
-        <label><input id="beamToggle" type="checkbox" /> TX beam</label>
+        <label><input id="beamToggle" type="checkbox" checked /> TX beam</label>
         <label><input id="photoelectronToggle" type="checkbox" checked /> Photoelectrons</label>
         <label><input id="conjugateToggle" type="checkbox" /> Conjugate e-</label>
         <label><input id="zenithRotateToggle" type="checkbox" checked /> Zenith axis</label>
@@ -279,6 +283,10 @@
 
       function curvedGroundZ(eastKm, northKm) {
         return -(eastKm * eastKm + northKm * northKm) / (2 * EARTH_RADIUS_KM);
+      }
+
+      function altitudeOfLocalPoint(point) {
+        return point.z - curvedGroundZ(point.x, point.y);
       }
 
       function makeEarthPatch(texture) {
@@ -500,14 +508,21 @@
       const electronPaths = SANYA_IGRF_FIELDLINES.fieldLines
         .map((line) => line.map(([x, y, z]) => new THREE.Vector3(x, y, z)))
         .map((points) => {
-          const filtered = points.filter((p) => p.z >= 80 && p.z <= 1050);
+          const filtered = points.filter((p) => {
+            const altitude = altitudeOfLocalPoint(p);
+            return altitude >= 80 && altitude <= 1050;
+          });
           if (filtered.length < 4) return null;
           const lengths = [0];
           for (let i = 1; i < filtered.length; i += 1) {
             lengths.push(lengths[i - 1] + filtered[i].distanceTo(filtered[i - 1]));
           }
-          const lowIndex = filtered.reduce((best, p, i) => (Math.abs(p.z - 100) < Math.abs(filtered[best].z - 100) ? i : best), 0);
-          const highIndex = filtered.reduce((best, p, i) => (Math.abs(p.z - 1000) < Math.abs(filtered[best].z - 1000) ? i : best), 0);
+          const lowIndex = filtered.reduce((best, p, i) => {
+            return Math.abs(altitudeOfLocalPoint(p) - 100) < Math.abs(altitudeOfLocalPoint(filtered[best]) - 100) ? i : best;
+          }, 0);
+          const highIndex = filtered.reduce((best, p, i) => {
+            return Math.abs(altitudeOfLocalPoint(p) - 1000) < Math.abs(altitudeOfLocalPoint(filtered[best]) - 1000) ? i : best;
+          }, 0);
           const lowS = lengths[lowIndex];
           const highS = lengths[highIndex];
           if (Math.abs(highS - lowS) < 100) return null;
@@ -688,7 +703,7 @@
       }
       initializeElectrons();
 
-      let localBirthAccumulator = 0;
+      let localBirthAccumulator = 36;
       let conjugateBirthAccumulator = 0;
 
       function activateOneElectron(conjugate) {
@@ -726,7 +741,8 @@
           electron.age += dt;
           electron.s += electron.flow * electron.parallelSpeed * 1.45 * dt;
           const sampled = samplePath(electron.path, electron.s);
-          if (sampled.center.z < 100 || sampled.center.z > 1000 || electron.s < 0 || electron.s > electron.path.total) {
+          const electronAltitude = altitudeOfLocalPoint(sampled.center);
+          if (electronAltitude < 100 || electronAltitude > 1000 || electron.s < 0 || electron.s > electron.path.total) {
             electron.active = false;
             electron.birthDelay = Math.random() * 2.8;
             hideElectron(i);
@@ -882,7 +898,7 @@
 
       function makeAltitudeScale() {
         const x = 0;
-        const y = -1700;
+        const y = -280;
         const ground = curvedGroundZ(x, y);
         const material = new THREE.LineBasicMaterial({
           color: 0xffffff,
@@ -914,7 +930,7 @@
             label.material.depthTest = false;
             label.material.depthWrite = false;
             label.renderOrder = 1001;
-            label.position.set(x - 145, y, ground + alt);
+            label.position.set(x + 120, y, ground + alt);
             altitudeGroup.add(label);
           }
         }
@@ -1002,11 +1018,13 @@
         toolbarLogo.setAttribute("aria-label", collapsed ? "Open controls" : "Collapse controls");
       }
 
-      toolbarLogo.addEventListener("click", () => {
+      toolbar.addEventListener("click", (event) => {
         if (toolbarMovedDuringDrag) {
           toolbarMovedDuringDrag = false;
           return;
         }
+        const clickedLogo = Boolean(event.target.closest("#toolbarLogo"));
+        if (!toolbar.classList.contains("collapsed") && !clickedLogo) return;
         setToolbarCollapsed(!toolbar.classList.contains("collapsed"));
       });
 
@@ -1138,6 +1156,7 @@
 
       new THREE.TextureLoader().load(TEXTURE_URL, makeEarthPatch);
       fRegionGroup.visible = document.querySelector("#fRegionToggle").checked;
+      beamGroup.visible = document.querySelector("#beamToggle").checked;
       photoelectronGroup.visible = document.querySelector("#photoelectronToggle").checked;
       setWestView();
 
