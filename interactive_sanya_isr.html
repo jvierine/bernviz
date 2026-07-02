@@ -867,8 +867,10 @@
         const baseZ = curvedGroundZ(0, 0);
         radar.position.set(0, 0, baseZ);
 
-        const deckWidth = 220;
-        const deckDepth = 132;
+        const physicalApertureM = 40;
+        const visualKmPerMeter = 4.0;
+        const deckWidth = physicalApertureM * visualKmPerMeter;
+        const deckDepth = physicalApertureM * visualKmPerMeter;
         const deckZ = 5;
         const deckThickness = 3;
         const white = new THREE.Color(0xf7f7f2);
@@ -906,12 +908,12 @@
         addBox(-deckWidth / 2, 0, deckZ + 2, 3, deckDepth + 8, 4);
         addBox(deckWidth / 2, 0, deckZ + 2, 3, deckDepth + 8, 4);
 
-        for (const x of [-96, -48, 0, 48, 96]) {
-          for (const y of [-54, 0, 54]) {
+        for (const x of [-68, -34, 0, 34, 68]) {
+          for (const y of [-68, -34, 0, 34, 68]) {
             addBox(x, y, -6, 4, 4, 24, edgeMaterial);
           }
         }
-        for (const x of [-96, -48, 0, 48, 96]) {
+        for (const x of [-68, -34, 0, 34, 68]) {
           addBox(x, -deckDepth / 2 - 8, -8, 12, 10, 20, shadowMaterial);
           addBox(x, deckDepth / 2 + 8, -8, 12, 10, 20, shadowMaterial);
         }
@@ -927,9 +929,9 @@
         ];
         const letterCols = letterRows[0].length;
         const letterRowsCount = letterRows.length;
-        const cols = 31;
-        const rows = 19;
-        const elementRadius = 2.7;
+        const cols = 33;
+        const rows = 33;
+        const elementRadius = 1.95;
         const elementGeometry = new THREE.SphereGeometry(elementRadius, 12, 8);
         const elementMaterial = new THREE.MeshStandardMaterial({
           color: 0xffffff,
@@ -945,12 +947,12 @@
         for (let row = 0; row < rows; row += 1) {
           for (let col = 0; col < cols; col += 1) {
             const x = -deckWidth * 0.42 + (col / (cols - 1)) * deckWidth * 0.84;
-            const y = -deckDepth * 0.37 + (row / (rows - 1)) * deckDepth * 0.74;
+            const y = -deckDepth * 0.42 + (row / (rows - 1)) * deckDepth * 0.84;
             matrix.makeTranslation(x, y, deckZ + 4.2);
             elements.setMatrixAt(index, matrix);
 
-            const letterCol = Math.floor(((col - 5) / 21) * letterCols);
-            const letterRow = Math.floor(((rows - 1 - row - 6) / 7) * letterRowsCount);
+            const letterCol = Math.floor(((col - 6) / 21) * letterCols);
+            const letterRow = Math.floor(((rows - 1 - row - 13) / 7) * letterRowsCount);
             const isLetter = (
               letterCol >= 0
               && letterCol < letterCols
@@ -966,7 +968,7 @@
         radar.add(elements);
 
         const feedMaterial = new THREE.MeshBasicMaterial({ color: 0x0b0d0c, transparent: true, opacity: 0.2 });
-        addBox(0, 0, deckZ + 3.9, deckWidth * 0.5, deckDepth * 0.28, 0.4, feedMaterial);
+        addBox(0, 0, deckZ + 3.9, deckWidth * 0.5, deckDepth * 0.22, 0.4, feedMaterial);
 
         radar.renderOrder = 1020;
         sanyaGroup.add(radar);
