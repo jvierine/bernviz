@@ -1,0 +1,1159 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sanya ISR Magnetic Meridian View</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #000;
+        color: #f4f4f4;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      #app {
+        position: fixed;
+        inset: 0;
+      }
+
+      canvas {
+        display: block;
+      }
+
+      .toolbar {
+        position: fixed;
+        left: 16px;
+        top: 16px;
+        display: grid;
+        gap: 10px;
+        width: min(310px, calc(100vw - 32px));
+        padding: 12px;
+        border: 1px solid rgb(255 255 255 / 0.18);
+        background: rgb(0 0 0 / 0.62);
+        backdrop-filter: blur(10px);
+        font-size: 13px;
+      }
+
+      .logo-toggle {
+        position: absolute;
+        right: 10px;
+        top: 10px;
+        width: 34px;
+        height: 34px;
+        padding: 3px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+      }
+
+      .logo-toggle img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        pointer-events: none;
+      }
+
+      .toolbar.collapsed {
+        width: 58px;
+        height: 58px;
+        padding: 6px;
+        gap: 0;
+        border-radius: 50%;
+        cursor: move;
+      }
+
+      .toolbar.collapsed > :not(.logo-toggle) {
+        display: none;
+      }
+
+      .toolbar.collapsed .logo-toggle {
+        position: static;
+        width: 46px;
+        height: 46px;
+        border: 0;
+        background: transparent;
+        padding: 0;
+        cursor: pointer;
+      }
+
+      .toolbar h1 {
+        margin: 0 42px 2px 0;
+        font-size: 15px;
+        font-weight: 650;
+        cursor: move;
+        user-select: none;
+      }
+
+      .row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .checks {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px 10px;
+      }
+
+      label {
+        color: rgb(255 255 255 / 0.84);
+      }
+
+      input[type="range"] {
+        width: 135px;
+      }
+
+      button {
+        border: 1px solid rgb(255 255 255 / 0.24);
+        background: rgb(255 255 255 / 0.08);
+        color: white;
+        padding: 7px 9px;
+        cursor: pointer;
+      }
+
+      .readout {
+        position: fixed;
+        right: 16px;
+        bottom: 14px;
+        max-width: min(620px, calc(100vw - 32px));
+        color: rgb(255 255 255 / 0.68);
+        font-size: 12px;
+        line-height: 1.45;
+        text-align: right;
+      }
+
+      @media (max-width: 720px) {
+        .toolbar {
+          font-size: 12px;
+        }
+
+        .checks {
+          grid-template-columns: 1fr;
+        }
+
+        .readout {
+          text-align: left;
+          left: 16px;
+          right: auto;
+        }
+      }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.165.0/build/three.module.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <main id="app"></main>
+    <section class="toolbar" aria-label="View controls">
+      <button id="toolbarLogo" class="logo-toggle" type="button" aria-label="Collapse controls">
+        <img src="./assets/caslogo.png" alt="" />
+      </button>
+      <h1>Sanya ISR Magnetic Meridian</h1>
+      <div class="checks">
+        <label><input id="fieldLinesToggle" type="checkbox" checked /> Field lines</label>
+        <label><input id="meridianToggle" type="checkbox" checked /> Meridian</label>
+        <label><input id="altitudeToggle" type="checkbox" checked /> Altitude</label>
+        <label><input id="sanyaToggle" type="checkbox" checked /> Sanya</label>
+        <label><input id="fRegionToggle" type="checkbox" checked /> F-region</label>
+        <label><input id="beamToggle" type="checkbox" /> TX beam</label>
+        <label><input id="photoelectronToggle" type="checkbox" checked /> Photoelectrons</label>
+        <label><input id="conjugateToggle" type="checkbox" /> Conjugate e-</label>
+        <label><input id="zenithRotateToggle" type="checkbox" checked /> Zenith axis</label>
+      </div>
+      <label class="row">
+        <span>Vertical scale</span>
+        <input id="zScale" type="range" min="0.3" max="2.5" value="1.0" step="0.05" />
+      </label>
+      <label class="row">
+        <span>Zoom</span>
+        <input id="zoom" type="range" min="650" max="4200" value="1850" step="10" />
+      </label>
+      <div class="row">
+        <button id="westView" type="button">West View</button>
+        <button id="topView" type="button">Top View</button>
+      </div>
+    </section>
+    <div class="readout">
+      Drag to change look direction. Scroll or use the zoom slider. Earth texture: NASA Blue Marble Next Generation. Magnetic field lines: IGRF14 via ppigrf, 2026-07-02. Script provenance: interactive_sanya_isr.html, export_sanya_igrf_fieldlines.py.
+    </div>
+
+    <script type="module">
+      import * as THREE from "three";
+      import { SANYA_IGRF_FIELDLINES } from "./assets/sanya_igrf_fieldlines.js";
+
+      const EARTH_RADIUS_KM = 6371;
+      const SANYA_LAT = 18.3;
+      const SANYA_LON = 109.6;
+      const TEXTURE_URL = "./assets/nasa_blue_marble_2004_12_5400x2700.jpg";
+
+      const app = document.querySelector("#app");
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x000000);
+
+      const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+      renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+      renderer.setSize(innerWidth, innerHeight);
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      app.appendChild(renderer.domElement);
+
+      const camera = new THREE.PerspectiveCamera(34, innerWidth / innerHeight, 1, 15000);
+      camera.up.set(0, 0, 1);
+      const view = {
+        azimuth: 0,
+        elevation: 10,
+        distance: 1850,
+        dragging: false,
+        lastX: 0,
+        lastY: 0,
+        target: new THREE.Vector3(0, 0, 150),
+        azimuthVelocity: 0,
+        elevationVelocity: 0,
+      };
+
+      const root = new THREE.Group();
+      scene.add(root);
+      const zScaled = new THREE.Group();
+      root.add(zScaled);
+
+      const fieldLinesGroup = new THREE.Group();
+      const meridianGroup = new THREE.Group();
+      const altitudeGroup = new THREE.Group();
+      const sanyaGroup = new THREE.Group();
+      const fRegionGroup = new THREE.Group();
+      const photoelectronGroup = new THREE.Group();
+      const beamGroup = new THREE.Group();
+      zScaled.add(fRegionGroup, beamGroup, fieldLinesGroup, meridianGroup, photoelectronGroup, altitudeGroup, sanyaGroup);
+
+      const light = new THREE.HemisphereLight(0xffffff, 0x1b2440, 1.9);
+      scene.add(light);
+
+      const dirLight = new THREE.DirectionalLight(0xffffff, 1.6);
+      dirLight.position.set(800, -900, 1400);
+      scene.add(dirLight);
+
+      function unitVector(latDeg, lonDeg) {
+        const lat = THREE.MathUtils.degToRad(latDeg);
+        const lon = THREE.MathUtils.degToRad(lonDeg);
+        return new THREE.Vector3(Math.cos(lat) * Math.cos(lon), Math.cos(lat) * Math.sin(lon), Math.sin(lat));
+      }
+
+      const up = unitVector(SANYA_LAT, SANYA_LON);
+      const lonRad = THREE.MathUtils.degToRad(SANYA_LON);
+      const latRad = THREE.MathUtils.degToRad(SANYA_LAT);
+      const eastBasis = new THREE.Vector3(-Math.sin(lonRad), Math.cos(lonRad), 0);
+      const northBasis = new THREE.Vector3(
+        -Math.sin(latRad) * Math.cos(lonRad),
+        -Math.sin(latRad) * Math.sin(lonRad),
+        Math.cos(latRad),
+      );
+
+      function localToLatLon(eastKm, northKm) {
+        const p = up
+          .clone()
+          .addScaledVector(eastBasis, eastKm / EARTH_RADIUS_KM)
+          .addScaledVector(northBasis, northKm / EARTH_RADIUS_KM)
+          .normalize();
+        return {
+          lat: THREE.MathUtils.radToDeg(Math.asin(p.z)),
+          lon: THREE.MathUtils.radToDeg(Math.atan2(p.y, p.x)),
+        };
+      }
+
+      function uvFromLatLon(lat, lon) {
+        const wrappedLon = ((lon + 180 + 360) % 360) - 180;
+        return [(wrappedLon + 180) / 360, 1 - (90 - lat) / 180];
+      }
+
+      function curvedGroundZ(eastKm, northKm) {
+        return -(eastKm * eastKm + northKm * northKm) / (2 * EARTH_RADIUS_KM);
+      }
+
+      function makeEarthPatch(texture) {
+        const widthSegments = 560;
+        const heightSegments = 420;
+        const eastMin = -2400;
+        const eastMax = 3200;
+        const northMin = -2100;
+        const northMax = 3600;
+        const geometry = new THREE.PlaneGeometry(eastMax - eastMin, northMax - northMin, widthSegments, heightSegments);
+        const pos = geometry.attributes.position;
+        const uv = geometry.attributes.uv;
+
+        for (let i = 0; i < pos.count; i += 1) {
+          const eastKm = eastMin + ((pos.getX(i) + (eastMax - eastMin) / 2) / (eastMax - eastMin)) * (eastMax - eastMin);
+          const northKm = northMin + ((pos.getY(i) + (northMax - northMin) / 2) / (northMax - northMin)) * (northMax - northMin);
+          const z = curvedGroundZ(eastKm, northKm);
+          pos.setXYZ(i, eastKm, northKm, z);
+          const ll = localToLatLon(eastKm, northKm);
+          const [u, v] = uvFromLatLon(ll.lat, ll.lon);
+          uv.setXY(i, u, v);
+        }
+
+        geometry.computeVertexNormals();
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.flipY = true;
+        texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+        const material = new THREE.MeshStandardMaterial({
+          map: texture,
+          roughness: 0.85,
+          metalness: 0,
+          side: THREE.DoubleSide,
+        });
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.name = "NASA Blue Marble local Earth surface";
+        root.add(mesh);
+      }
+
+      function makeFRegionHaze() {
+        const northMin = -1900;
+        const northMax = 2700;
+        const altMin = 120;
+        const altMax = 540;
+
+        const material = new THREE.ShaderMaterial({
+          transparent: true,
+          depthTest: false,
+          depthWrite: false,
+          side: THREE.DoubleSide,
+          vertexColors: true,
+          blending: THREE.AdditiveBlending,
+          uniforms: {},
+          vertexShader: `
+            attribute float alpha;
+            varying vec3 vColor;
+            varying float vAlpha;
+            void main() {
+              vColor = color;
+              vAlpha = alpha;
+              gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+          `,
+          fragmentShader: `
+            varying vec3 vColor;
+            varying float vAlpha;
+            void main() {
+              gl_FragColor = vec4(vColor, vAlpha);
+            }
+          `,
+        });
+
+        for (const eastOffset of [-120, -45, 0, 45, 120]) {
+          const geometry = new THREE.PlaneGeometry(northMax - northMin, altMax - altMin, 190, 44);
+          const pos = geometry.attributes.position;
+          const color = new THREE.Color();
+          const colors = [];
+          const alphas = [];
+          const crossFade = Math.exp(-(eastOffset * eastOffset) / (2 * 90 * 90));
+
+          for (let i = 0; i < pos.count; i += 1) {
+            const northKm = northMin + ((pos.getX(i) + (northMax - northMin) / 2) / (northMax - northMin)) * (northMax - northMin);
+            const altitude = altMin + ((pos.getY(i) + (altMax - altMin) / 2) / (altMax - altMin)) * (altMax - altMin);
+            const fPeak = Math.exp(-((altitude - 300) * (altitude - 300)) / (2 * 78 * 78));
+            const alongMeridian = Math.exp(-(northKm * northKm) / (2 * 1850 * 1850));
+            const ripple = 0.8 + 0.13 * Math.sin(northKm / 360) + 0.07 * Math.cos(altitude / 54);
+            const alpha = Math.max(0, Math.min(0.2, 0.2 * fPeak * alongMeridian * crossFade * ripple));
+            pos.setXYZ(i, eastOffset, northKm, altitude + curvedGroundZ(eastOffset, northKm));
+            color.setRGB(0.72 + 0.18 * fPeak, 0.08, 0.95);
+            colors.push(color.r, color.g, color.b);
+            alphas.push(alpha);
+          }
+
+          geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+          geometry.setAttribute("alpha", new THREE.Float32BufferAttribute(alphas, 1));
+          geometry.computeVertexNormals();
+          const layer = new THREE.Mesh(geometry, material.clone());
+          layer.renderOrder = 120;
+          fRegionGroup.add(layer);
+        }
+        fRegionGroup.visible = false;
+      }
+      makeFRegionHaze();
+
+      function makeBeamVisualization() {
+        if (!SANYA_IGRF_FIELDLINES.beam) return;
+        const axis = SANYA_IGRF_FIELDLINES.beam.axis.map(([x, y, z]) => new THREE.Vector3(x, y, z));
+        const lineMaterial = new THREE.LineBasicMaterial({
+          color: 0x00d6ff,
+          transparent: true,
+          opacity: 0.95,
+          depthTest: false,
+          depthWrite: false,
+        });
+        const centerLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(axis), lineMaterial);
+        centerLine.renderOrder = 620;
+        beamGroup.add(centerLine);
+
+        const coneGeometry = new THREE.BufferGeometry();
+        const vertices = [];
+        const colors = [];
+        const color = new THREE.Color(0x00c8ff);
+        const radialSegments = 40;
+        const halfAngle = THREE.MathUtils.degToRad(1.8);
+        for (let i = 1; i < axis.length; i += 1) {
+          const p0 = axis[i - 1];
+          const p1 = axis[i];
+          const tangent = p1.clone().sub(p0).normalize();
+          const ref = Math.abs(tangent.dot(new THREE.Vector3(0, 0, 1))) > 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 0, 1);
+          const n = new THREE.Vector3().crossVectors(tangent, ref).normalize();
+          const b = new THREE.Vector3().crossVectors(tangent, n).normalize();
+          const r0 = Math.max(8, p0.length() * 0.0 + p0.z * Math.tan(halfAngle));
+          const r1 = Math.max(8, p1.z * Math.tan(halfAngle));
+          for (let j = 0; j < radialSegments; j += 2) {
+            const a0 = (j / radialSegments) * Math.PI * 2;
+            const a1 = ((j + 1) / radialSegments) * Math.PI * 2;
+            const q00 = p0.clone().add(n.clone().multiplyScalar(Math.cos(a0) * r0)).add(b.clone().multiplyScalar(Math.sin(a0) * r0));
+            const q01 = p0.clone().add(n.clone().multiplyScalar(Math.cos(a1) * r0)).add(b.clone().multiplyScalar(Math.sin(a1) * r0));
+            const q10 = p1.clone().add(n.clone().multiplyScalar(Math.cos(a0) * r1)).add(b.clone().multiplyScalar(Math.sin(a0) * r1));
+            const q11 = p1.clone().add(n.clone().multiplyScalar(Math.cos(a1) * r1)).add(b.clone().multiplyScalar(Math.sin(a1) * r1));
+            for (const q of [q00, q10, q11, q00, q11, q01]) {
+              vertices.push(q.x, q.y, q.z);
+              colors.push(color.r, color.g, color.b);
+            }
+          }
+        }
+        coneGeometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
+        coneGeometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+        const coneMaterial = new THREE.MeshBasicMaterial({
+          vertexColors: true,
+          transparent: true,
+          opacity: 0.26,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+          depthTest: false,
+          blending: THREE.AdditiveBlending,
+        });
+        const cone = new THREE.Mesh(coneGeometry, coneMaterial);
+        cone.renderOrder = 610;
+        beamGroup.add(cone);
+
+        beamGroup.visible = false;
+      }
+      makeBeamVisualization();
+
+      function makeCurvedAltitudeGuides() {
+        const material = new THREE.LineBasicMaterial({
+          color: 0xffffff,
+          transparent: true,
+          opacity: 0.42,
+          depthTest: false,
+          depthWrite: false,
+        });
+        for (const altitude of [100, 300, 600, 1000]) {
+          const pts = [];
+          const x = 0;
+          for (let y = -1650; y <= 1900; y += 28) {
+            pts.push(new THREE.Vector3(x, y, altitude + curvedGroundZ(x, y)));
+          }
+          const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), material);
+          line.renderOrder = 990;
+          altitudeGroup.add(line);
+        }
+      }
+
+      function makeTubeLine(points, color, radius = 7, opacity = 1) {
+        const curve = new THREE.CatmullRomCurve3(points.map(([x, y, z]) => new THREE.Vector3(x, y, z)));
+        const geometry = new THREE.TubeGeometry(curve, Math.max(12, points.length * 2), radius, 8, false);
+        const material = new THREE.MeshBasicMaterial({
+          color,
+          transparent: opacity < 1,
+          opacity,
+        });
+        return new THREE.Mesh(geometry, material);
+      }
+
+      for (const line of SANYA_IGRF_FIELDLINES.fieldLines) {
+        fieldLinesGroup.add(makeTubeLine(line, 0xff4d1f, 3.2, 0.78));
+      }
+
+      function makeRoundParticleTexture() {
+        const canvas = document.createElement("canvas");
+        canvas.width = 64;
+        canvas.height = 64;
+        const ctx = canvas.getContext("2d");
+        const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 31);
+        gradient.addColorStop(0.0, "rgba(255,255,255,1)");
+        gradient.addColorStop(0.45, "rgba(255,255,255,0.92)");
+        gradient.addColorStop(0.75, "rgba(255,255,255,0.32)");
+        gradient.addColorStop(1.0, "rgba(255,255,255,0)");
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(32, 32, 31, 0, Math.PI * 2);
+        ctx.fill();
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.colorSpace = THREE.SRGBColorSpace;
+        return texture;
+      }
+
+      const electronPaths = SANYA_IGRF_FIELDLINES.fieldLines
+        .map((line) => line.map(([x, y, z]) => new THREE.Vector3(x, y, z)))
+        .map((points) => {
+          const filtered = points.filter((p) => p.z >= 80 && p.z <= 1050);
+          if (filtered.length < 4) return null;
+          const lengths = [0];
+          for (let i = 1; i < filtered.length; i += 1) {
+            lengths.push(lengths[i - 1] + filtered[i].distanceTo(filtered[i - 1]));
+          }
+          const lowIndex = filtered.reduce((best, p, i) => (Math.abs(p.z - 100) < Math.abs(filtered[best].z - 100) ? i : best), 0);
+          const highIndex = filtered.reduce((best, p, i) => (Math.abs(p.z - 1000) < Math.abs(filtered[best].z - 1000) ? i : best), 0);
+          const lowS = lengths[lowIndex];
+          const highS = lengths[highIndex];
+          if (Math.abs(highS - lowS) < 100) return null;
+          const dir = highS > lowS ? 1 : -1;
+          return {
+            points: filtered,
+            lengths,
+            lowS,
+            highS,
+            dir,
+            total: lengths[lengths.length - 1],
+          };
+        })
+        .filter(Boolean);
+      const localElectronPaths = electronPaths.filter((path) => {
+        const p = samplePath(path, path.lowS).center;
+        return Math.abs(p.x) < 900 && p.y > -1200 && p.y < 1800;
+      });
+
+      function samplePath(path, s) {
+        const clampedS = Math.max(0, Math.min(path.total, s));
+        let i = 1;
+        while (i < path.lengths.length - 1 && path.lengths[i] < clampedS) i += 1;
+        const s0 = path.lengths[i - 1];
+        const s1 = path.lengths[i];
+        const t = s1 === s0 ? 0 : (clampedS - s0) / (s1 - s0);
+        const center = path.points[i - 1].clone().lerp(path.points[i], t);
+        const tangent = path.points[i].clone().sub(path.points[i - 1]).normalize();
+        const reference = Math.abs(tangent.dot(new THREE.Vector3(0, 0, 1))) > 0.9
+          ? new THREE.Vector3(1, 0, 0)
+          : new THREE.Vector3(0, 0, 1);
+        const normal = new THREE.Vector3().crossVectors(tangent, reference).normalize();
+        const binormal = new THREE.Vector3().crossVectors(tangent, normal).normalize();
+        return { center, tangent, normal, binormal };
+      }
+
+      function chooseElectronPath(conjugate) {
+        const candidates = conjugate || localElectronPaths.length === 0 ? electronPaths : localElectronPaths;
+        return candidates[Math.floor(Math.random() * candidates.length)];
+      }
+
+      const electronCount = 320;
+      const electronPositions = new Float32Array(electronCount * 3);
+      const electronColors = new Float32Array(electronCount * 3);
+      const electrons = [];
+      const photonFlashes = [];
+      const electronGeometry = new THREE.BufferGeometry();
+      electronGeometry.setAttribute("position", new THREE.BufferAttribute(electronPositions, 3));
+      electronGeometry.setAttribute("color", new THREE.BufferAttribute(electronColors, 3));
+      const roundParticleTexture = makeRoundParticleTexture();
+      const electronMaterial = new THREE.PointsMaterial({
+        size: 42,
+        map: roundParticleTexture,
+        alphaTest: 0.04,
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.95,
+        depthTest: false,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      });
+      const electronPoints = new THREE.Points(electronGeometry, electronMaterial);
+      electronPoints.renderOrder = 900;
+      photoelectronGroup.add(electronPoints);
+      photoelectronGroup.visible = false;
+
+      const tailSteps = 18;
+      const tailPositions = new Float32Array(electronCount * tailSteps * 3);
+      const tailColors = new Float32Array(electronCount * tailSteps * 3);
+      const tailGeometry = new THREE.BufferGeometry();
+      tailGeometry.setAttribute("position", new THREE.BufferAttribute(tailPositions, 3));
+      tailGeometry.setAttribute("color", new THREE.BufferAttribute(tailColors, 3));
+      const tailMaterial = new THREE.PointsMaterial({
+        size: 12,
+        map: roundParticleTexture,
+        alphaTest: 0.03,
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.88,
+        depthTest: false,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      });
+      const tailPoints = new THREE.Points(tailGeometry, tailMaterial);
+      tailPoints.renderOrder = 880;
+      photoelectronGroup.add(tailPoints);
+
+      const tailLinePositions = new Float32Array(electronCount * (tailSteps - 1) * 2 * 3);
+      const tailLineColors = new Float32Array(electronCount * (tailSteps - 1) * 2 * 3);
+      const tailLineGeometry = new THREE.BufferGeometry();
+      tailLineGeometry.setAttribute("position", new THREE.BufferAttribute(tailLinePositions, 3));
+      tailLineGeometry.setAttribute("color", new THREE.BufferAttribute(tailLineColors, 3));
+      const tailLineMaterial = new THREE.LineBasicMaterial({
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.92,
+        depthTest: false,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      });
+      const tailLines = new THREE.LineSegments(tailLineGeometry, tailLineMaterial);
+      tailLines.renderOrder = 875;
+      photoelectronGroup.add(tailLines);
+
+      const photonGeometry = new THREE.BufferGeometry();
+      photonGeometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(0), 3));
+      const photonMaterial = new THREE.LineBasicMaterial({
+        color: 0xffef4a,
+        transparent: true,
+        opacity: 0.64,
+        depthTest: false,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      });
+      const photonLines = new THREE.LineSegments(photonGeometry, photonMaterial);
+      photonLines.renderOrder = 920;
+      photoelectronGroup.add(photonLines);
+
+      function hideElectron(i) {
+        electronPositions[i * 3] = 1e8;
+        electronPositions[i * 3 + 1] = 1e8;
+        electronPositions[i * 3 + 2] = 1e8;
+        for (let j = 0; j < tailSteps; j += 1) {
+          const k = (i * tailSteps + j) * 3;
+          tailPositions[k] = 1e8;
+          tailPositions[k + 1] = 1e8;
+          tailPositions[k + 2] = 1e8;
+        }
+        for (let j = 0; j < tailSteps - 1; j += 1) {
+          const k = (i * (tailSteps - 1) + j) * 6;
+          tailLinePositions[k] = 1e8;
+          tailLinePositions[k + 1] = 1e8;
+          tailLinePositions[k + 2] = 1e8;
+          tailLinePositions[k + 3] = 1e8;
+          tailLinePositions[k + 4] = 1e8;
+          tailLinePositions[k + 5] = 1e8;
+        }
+      }
+
+      function spawnPhotonFlash(position) {
+        photonFlashes.push({
+          position: position.clone(),
+          age: 0,
+          phase: Math.random() * Math.PI * 2,
+        });
+        if (photonFlashes.length > 24) photonFlashes.shift();
+      }
+
+      function resetElectron(electron, conjugate = false, active = true) {
+        const path = chooseElectronPath(conjugate);
+        electron.path = path;
+        electron.conjugate = conjugate;
+        const pitch = THREE.MathUtils.degToRad(8 + Math.pow(Math.random(), 0.62) * 80);
+        const totalSpeed = 125 + Math.random() * 120;
+        electron.parallelSpeed = Math.max(35, totalSpeed * Math.cos(pitch));
+        electron.perpSpeed = totalSpeed * Math.sin(pitch);
+        electron.phase = Math.random() * Math.PI * 2;
+        electron.pitch = pitch;
+        electron.gyro = 5.5 + electron.perpSpeed / 18 + Math.random() * 3.5;
+        electron.radius = 8 + 0.25 * electron.perpSpeed + Math.random() * 11;
+        electron.age = 0;
+        electron.active = active;
+        electron.birthDelay = active ? 0 : Math.random() * 4.0;
+        electron.s = conjugate ? path.highS - path.dir * Math.random() * 80 : path.lowS + path.dir * Math.random() * 35;
+        electron.flow = conjugate ? -path.dir : path.dir;
+        electron.trail = [];
+        if (active) spawnPhotonFlash(samplePath(electron.path, electron.s).center);
+      }
+
+      function initializeElectrons() {
+        electrons.length = 0;
+        for (let i = 0; i < electronCount; i += 1) {
+          const electron = {};
+          resetElectron(electron, i > electronCount * 0.55, false);
+          electrons.push(electron);
+          hideElectron(i);
+        }
+      }
+      initializeElectrons();
+
+      let localBirthAccumulator = 0;
+      let conjugateBirthAccumulator = 0;
+
+      function activateOneElectron(conjugate) {
+        const pool = electrons.filter((electron) => !electron.active && electron.conjugate === conjugate);
+        if (pool.length === 0) return;
+        resetElectron(pool[Math.floor(Math.random() * pool.length)], conjugate, true);
+      }
+
+      function updatePhotoelectrons(dt) {
+        const showConjugate = document.querySelector("#conjugateToggle").checked;
+        localBirthAccumulator += 85 * dt;
+        conjugateBirthAccumulator += (showConjugate ? 30 : 0) * dt;
+        while (localBirthAccumulator >= 1) {
+          activateOneElectron(false);
+          localBirthAccumulator -= 1;
+        }
+        while (conjugateBirthAccumulator >= 1) {
+          activateOneElectron(true);
+          conjugateBirthAccumulator -= 1;
+        }
+
+        for (let i = 0; i < electrons.length; i += 1) {
+          const electron = electrons[i];
+          if (!electron.active) {
+            hideElectron(i);
+            continue;
+          }
+          if (electron.conjugate && !showConjugate) {
+            electron.active = false;
+            electron.birthDelay = Math.random() * 3;
+            hideElectron(i);
+            continue;
+          }
+
+          electron.age += dt;
+          electron.s += electron.flow * electron.parallelSpeed * 1.45 * dt;
+          const sampled = samplePath(electron.path, electron.s);
+          if (sampled.center.z < 100 || sampled.center.z > 1000 || electron.s < 0 || electron.s > electron.path.total) {
+            electron.active = false;
+            electron.birthDelay = Math.random() * 2.8;
+            hideElectron(i);
+            continue;
+          }
+
+          const p = samplePath(electron.path, electron.s);
+          const angle = electron.phase + electron.age * electron.gyro * Math.PI * 2;
+          const gyroOffset = p.normal
+            .clone()
+            .multiplyScalar(Math.cos(angle) * electron.radius)
+            .add(p.binormal.clone().multiplyScalar(Math.sin(angle) * electron.radius));
+          const pos = p.center.clone().add(gyroOffset);
+          electron.trail.unshift(pos.clone());
+          electron.trail = electron.trail.slice(0, tailSteps);
+          electronPositions[i * 3] = pos.x;
+          electronPositions[i * 3 + 1] = pos.y;
+          electronPositions[i * 3 + 2] = pos.z;
+
+          const color = electron.conjugate ? new THREE.Color(0xa6fff5) : new THREE.Color(0xff4cff);
+          const flicker = 0.78 + 0.22 * Math.sin(angle * 0.37);
+          electronColors[i * 3] = color.r * flicker;
+          electronColors[i * 3 + 1] = color.g * flicker;
+          electronColors[i * 3 + 2] = color.b * flicker;
+
+          for (let j = 0; j < tailSteps; j += 1) {
+            const k = (i * tailSteps + j) * 3;
+            const trailPos = electron.trail[j] || pos;
+            tailPositions[k] = trailPos.x;
+            tailPositions[k + 1] = trailPos.y;
+            tailPositions[k + 2] = trailPos.z;
+            const fade = (1 - j / tailSteps) * 0.85;
+            tailColors[k] = color.r * fade;
+            tailColors[k + 1] = color.g * fade;
+            tailColors[k + 2] = color.b * fade;
+          }
+          for (let j = 0; j < tailSteps - 1; j += 1) {
+            const a = electron.trail[j];
+            const b = electron.trail[j + 1];
+            const k = (i * (tailSteps - 1) + j) * 6;
+            const ck = (i * (tailSteps - 1) + j) * 6;
+            if (!a || !b) {
+              tailLinePositions[k] = 1e8;
+              tailLinePositions[k + 1] = 1e8;
+              tailLinePositions[k + 2] = 1e8;
+              tailLinePositions[k + 3] = 1e8;
+              tailLinePositions[k + 4] = 1e8;
+              tailLinePositions[k + 5] = 1e8;
+              continue;
+            }
+            tailLinePositions[k] = a.x;
+            tailLinePositions[k + 1] = a.y;
+            tailLinePositions[k + 2] = a.z;
+            tailLinePositions[k + 3] = b.x;
+            tailLinePositions[k + 4] = b.y;
+            tailLinePositions[k + 5] = b.z;
+            const fadeA = (1 - j / tailSteps) * 0.72;
+            const fadeB = (1 - (j + 1) / tailSteps) * 0.72;
+            tailLineColors[ck] = color.r * fadeA;
+            tailLineColors[ck + 1] = color.g * fadeA;
+            tailLineColors[ck + 2] = color.b * fadeA;
+            tailLineColors[ck + 3] = color.r * fadeB;
+            tailLineColors[ck + 4] = color.g * fadeB;
+            tailLineColors[ck + 5] = color.b * fadeB;
+          }
+        }
+        const photonVertices = [];
+        for (let i = photonFlashes.length - 1; i >= 0; i -= 1) {
+          const flash = photonFlashes[i];
+          flash.age += dt;
+          if (flash.age > 0.24) {
+            photonFlashes.splice(i, 1);
+            continue;
+          }
+          const radius = 10 + flash.age * 78;
+          const n = 18;
+          for (let j = 0; j < n; j += 1) {
+            const a0 = (j / n) * Math.PI * 2;
+            const a1 = ((j + 1) / n) * Math.PI * 2;
+            photonVertices.push(
+              flash.position.x + Math.cos(a0) * radius,
+              flash.position.y + Math.sin(a0) * radius,
+              flash.position.z,
+              flash.position.x + Math.cos(a1) * radius,
+              flash.position.y + Math.sin(a1) * radius,
+              flash.position.z,
+            );
+          }
+          const waveStart = flash.position.clone().add(new THREE.Vector3(-180, -90, 70));
+          for (let j = 0; j < 12; j += 1) {
+            const t0 = j / 12;
+            const t1 = (j + 1) / 12;
+            const wig0 = Math.sin(t0 * Math.PI * 6 + flash.phase) * 12;
+            const wig1 = Math.sin(t1 * Math.PI * 6 + flash.phase) * 12;
+            photonVertices.push(
+              waveStart.x + (flash.position.x - waveStart.x) * t0,
+              waveStart.y + (flash.position.y - waveStart.y) * t0 + wig0,
+              waveStart.z + (flash.position.z - waveStart.z) * t0,
+              waveStart.x + (flash.position.x - waveStart.x) * t1,
+              waveStart.y + (flash.position.y - waveStart.y) * t1 + wig1,
+              waveStart.z + (flash.position.z - waveStart.z) * t1,
+            );
+          }
+        }
+        photonGeometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(photonVertices), 3));
+        electronGeometry.attributes.position.needsUpdate = true;
+        electronGeometry.attributes.color.needsUpdate = true;
+        tailGeometry.attributes.position.needsUpdate = true;
+        tailGeometry.attributes.color.needsUpdate = true;
+        tailLineGeometry.attributes.position.needsUpdate = true;
+        tailLineGeometry.attributes.color.needsUpdate = true;
+      }
+
+      const meridianPoints = [];
+      for (let s = -1800; s <= 1800; s += 18) {
+        meridianPoints.push([0, s, 6 + curvedGroundZ(0, s)]);
+      }
+      meridianGroup.add(makeTubeLine(meridianPoints, 0xffd84d, 7, 0.95));
+
+      const sanyaMarkerRadius = 28;
+      const sanyaDot = new THREE.Mesh(
+        new THREE.SphereGeometry(sanyaMarkerRadius, 32, 16),
+        new THREE.MeshBasicMaterial({ color: 0xff3b30 }),
+      );
+      sanyaDot.position.set(0, 0, curvedGroundZ(0, 0) + sanyaMarkerRadius * 0.45);
+      sanyaGroup.add(sanyaDot);
+
+      function makeTextSprite(text, color = "#ffffff", size = 44) {
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+        ctx.font = `${size}px Inter, Arial, sans-serif`;
+        const metrics = ctx.measureText(text);
+        canvas.width = Math.ceil(metrics.width + 28);
+        canvas.height = Math.ceil(size * 1.55);
+        ctx.font = `${size}px Inter, Arial, sans-serif`;
+        ctx.fillStyle = color;
+        ctx.textBaseline = "middle";
+        ctx.fillText(text, 14, canvas.height / 2);
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.colorSpace = THREE.SRGBColorSpace;
+        const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true }));
+        sprite.scale.set(canvas.width * 1.6, canvas.height * 1.6, 1);
+        return sprite;
+      }
+
+      const sanyaLabel = makeTextSprite("Sanya", "#ffffff", 34);
+      sanyaLabel.position.set(105, 25, 64);
+      sanyaGroup.add(sanyaLabel);
+
+      const meridianLabel = makeTextSprite("magnetic meridian", "#ffd84d", 32);
+      meridianLabel.position.set(40, 1550, 145);
+      meridianGroup.add(meridianLabel);
+
+      function makeAltitudeScale() {
+        const x = 0;
+        const y = -1700;
+        const ground = curvedGroundZ(x, y);
+        const material = new THREE.LineBasicMaterial({
+          color: 0xffffff,
+          transparent: true,
+          opacity: 0.9,
+          depthTest: false,
+          depthWrite: false,
+        });
+        const main = new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(x, y, ground + 100),
+          new THREE.Vector3(x, y, ground + 1000),
+        ]);
+        const mainLine = new THREE.Line(main, material);
+        mainLine.renderOrder = 1000;
+        altitudeGroup.add(mainLine);
+
+        for (let alt = 100; alt <= 1000; alt += 100) {
+          const tick = alt % 500 === 0 ? 90 : 55;
+          const geom = new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(x, y, ground + alt),
+            new THREE.Vector3(x + tick, y, ground + alt),
+          ]);
+          const tickLine = new THREE.Line(geom, material);
+          tickLine.renderOrder = 1000;
+          altitudeGroup.add(tickLine);
+
+          if (alt === 100 || alt === 1000 || alt % 200 === 0) {
+            const label = makeTextSprite(`${alt} km`, "#ffffff", 25);
+            label.material.depthTest = false;
+            label.material.depthWrite = false;
+            label.renderOrder = 1001;
+            label.position.set(x - 145, y, ground + alt);
+            altitudeGroup.add(label);
+          }
+        }
+      }
+      makeAltitudeScale();
+      makeCurvedAltitudeGuides();
+      altitudeGroup.renderOrder = 1000;
+
+      function applyCamera() {
+        const az = THREE.MathUtils.degToRad(view.azimuth);
+        const el = THREE.MathUtils.degToRad(view.elevation);
+        const horizontal = view.distance * Math.cos(el);
+        camera.position.set(
+          view.target.x + horizontal * Math.cos(az),
+          view.target.y + horizontal * Math.sin(az),
+          view.target.z + view.distance * Math.sin(el),
+        );
+        camera.lookAt(view.target);
+        document.querySelector("#zoom").value = Math.round(view.distance);
+      }
+
+      function setWestView() {
+        view.azimuth = 0;
+        view.elevation = 10;
+        view.distance = 1850;
+        view.target.set(0, 0, 150);
+        view.azimuthVelocity = 0;
+        view.elevationVelocity = 0;
+        applyCamera();
+      }
+
+      function setTopView() {
+        view.azimuth = 0;
+        view.elevation = 89;
+        view.distance = 4200;
+        view.target.set(0, 350, 0);
+        view.azimuthVelocity = 0;
+        view.elevationVelocity = 0;
+        applyCamera();
+      }
+
+      document.querySelector("#fieldLinesToggle").addEventListener("change", (event) => {
+        fieldLinesGroup.visible = event.target.checked;
+      });
+      document.querySelector("#meridianToggle").addEventListener("change", (event) => {
+        meridianGroup.visible = event.target.checked;
+      });
+      document.querySelector("#altitudeToggle").addEventListener("change", (event) => {
+        altitudeGroup.visible = event.target.checked;
+      });
+      document.querySelector("#sanyaToggle").addEventListener("change", (event) => {
+        sanyaGroup.visible = event.target.checked;
+      });
+      document.querySelector("#fRegionToggle").addEventListener("change", (event) => {
+        fRegionGroup.visible = event.target.checked;
+      });
+      document.querySelector("#beamToggle").addEventListener("change", (event) => {
+        beamGroup.visible = event.target.checked;
+      });
+      document.querySelector("#photoelectronToggle").addEventListener("change", (event) => {
+        photoelectronGroup.visible = event.target.checked;
+      });
+      document.querySelector("#conjugateToggle").addEventListener("change", () => {
+        for (const electron of electrons) {
+          if (electron.conjugate) resetElectron(electron, true);
+        }
+      });
+      document.querySelector("#zScale").addEventListener("input", (event) => {
+        zScaled.scale.z = Number(event.target.value);
+      });
+      document.querySelector("#zoom").addEventListener("input", (event) => {
+        view.distance = Number(event.target.value);
+        applyCamera();
+      });
+      document.querySelector("#westView").addEventListener("click", setWestView);
+      document.querySelector("#topView").addEventListener("click", setTopView);
+
+      const toolbar = document.querySelector(".toolbar");
+      const toolbarLogo = document.querySelector("#toolbarLogo");
+      let toolbarDrag = null;
+      let toolbarMovedDuringDrag = false;
+
+      function setToolbarCollapsed(collapsed) {
+        toolbar.classList.toggle("collapsed", collapsed);
+        toolbarLogo.setAttribute("aria-label", collapsed ? "Open controls" : "Collapse controls");
+      }
+
+      toolbarLogo.addEventListener("click", () => {
+        if (toolbarMovedDuringDrag) {
+          toolbarMovedDuringDrag = false;
+          return;
+        }
+        setToolbarCollapsed(!toolbar.classList.contains("collapsed"));
+      });
+
+      toolbar.addEventListener("pointerdown", (event) => {
+        const collapsedLogo = toolbar.classList.contains("collapsed") && event.target.closest("#toolbarLogo");
+        if (!collapsedLogo && event.target.closest("input, button, label")) return;
+        const rect = toolbar.getBoundingClientRect();
+        toolbarMovedDuringDrag = false;
+        toolbarDrag = {
+          pointerId: event.pointerId,
+          dx: event.clientX - rect.left,
+          dy: event.clientY - rect.top,
+          startX: event.clientX,
+          startY: event.clientY,
+        };
+        toolbar.setPointerCapture(event.pointerId);
+      });
+      toolbar.addEventListener("pointermove", (event) => {
+        if (!toolbarDrag || toolbarDrag.pointerId !== event.pointerId) return;
+        const margin = 8;
+        const x = Math.max(margin, Math.min(window.innerWidth - toolbar.offsetWidth - margin, event.clientX - toolbarDrag.dx));
+        const y = Math.max(margin, Math.min(window.innerHeight - toolbar.offsetHeight - margin, event.clientY - toolbarDrag.dy));
+        if (Math.hypot(event.clientX - toolbarDrag.startX, event.clientY - toolbarDrag.startY) > 4) {
+          toolbarMovedDuringDrag = true;
+        }
+        toolbar.style.left = `${x}px`;
+        toolbar.style.top = `${y}px`;
+      });
+      toolbar.addEventListener("pointerup", (event) => {
+        if (!toolbarDrag || toolbarDrag.pointerId !== event.pointerId) return;
+        toolbar.releasePointerCapture(event.pointerId);
+        toolbarDrag = null;
+      });
+
+      renderer.domElement.addEventListener("pointerdown", (event) => {
+        view.dragging = true;
+        view.lastX = event.clientX;
+        view.lastY = event.clientY;
+        renderer.domElement.setPointerCapture(event.pointerId);
+      });
+
+      renderer.domElement.addEventListener("pointermove", (event) => {
+        if (!view.dragging) return;
+        const dx = event.clientX - view.lastX;
+        const dy = event.clientY - view.lastY;
+        view.lastX = event.clientX;
+        view.lastY = event.clientY;
+
+        if (document.querySelector("#zenithRotateToggle").checked) {
+          view.azimuth += dx * 0.25;
+          view.elevation = Math.max(3, Math.min(84, view.elevation - dy * 0.16));
+        } else {
+          view.azimuth += dx * 0.25;
+          view.elevation = Math.max(3, Math.min(89, view.elevation - dy * 0.16));
+        }
+        applyCamera();
+      });
+
+      renderer.domElement.addEventListener("pointerup", (event) => {
+        view.dragging = false;
+        renderer.domElement.releasePointerCapture(event.pointerId);
+      });
+
+      renderer.domElement.addEventListener("wheel", (event) => {
+        event.preventDefault();
+        view.distance = Math.max(650, Math.min(5200, view.distance * (1 + event.deltaY * 0.001)));
+        applyCamera();
+      }, { passive: false });
+
+      const pressedViewKeys = new Set();
+      const viewKeyNames = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]);
+
+      window.addEventListener("keydown", (event) => {
+        if (event.target && ["INPUT", "BUTTON", "SELECT", "TEXTAREA"].includes(event.target.tagName)) return;
+        if (viewKeyNames.has(event.key)) {
+          pressedViewKeys.add(event.key);
+          if (!event.repeat) {
+            if (event.key === "ArrowLeft") view.azimuthVelocity -= 12;
+            if (event.key === "ArrowRight") view.azimuthVelocity += 12;
+            if (event.key === "ArrowUp") view.elevationVelocity += 9;
+            if (event.key === "ArrowDown") view.elevationVelocity -= 9;
+          }
+          event.preventDefault();
+        }
+      });
+
+      window.addEventListener("keyup", (event) => {
+        if (viewKeyNames.has(event.key)) {
+          pressedViewKeys.delete(event.key);
+          event.preventDefault();
+        }
+      });
+
+      window.addEventListener("blur", () => {
+        pressedViewKeys.clear();
+        view.azimuthVelocity = 0;
+        view.elevationVelocity = 0;
+      });
+
+      function updateKeyboardView(dt) {
+        const azInput = (pressedViewKeys.has("ArrowRight") ? 1 : 0) - (pressedViewKeys.has("ArrowLeft") ? 1 : 0);
+        const elInput = (pressedViewKeys.has("ArrowUp") ? 1 : 0) - (pressedViewKeys.has("ArrowDown") ? 1 : 0);
+        const targetAzVelocity = azInput * 56;
+        const targetElVelocity = elInput * 42;
+        const smoothing = 1 - Math.exp(-dt * 12);
+        view.azimuthVelocity += (targetAzVelocity - view.azimuthVelocity) * smoothing;
+        view.elevationVelocity += (targetElVelocity - view.elevationVelocity) * smoothing;
+
+        if (Math.abs(view.azimuthVelocity) > 0.02 || Math.abs(view.elevationVelocity) > 0.02) {
+          view.azimuth += view.azimuthVelocity * dt;
+          view.elevation = Math.max(3, Math.min(89, view.elevation + view.elevationVelocity * dt));
+          applyCamera();
+        }
+      }
+
+      window.SANYA_VIEW_STATE = () => ({
+        cameraDistance: view.distance,
+        azimuth: view.azimuth,
+        elevation: view.elevation,
+        cameraPosition: camera.position.toArray(),
+        target: view.target.toArray(),
+        fieldLineCount: fieldLinesGroup.children.length,
+        meridianVisible: meridianGroup.visible,
+        fieldLinesVisible: fieldLinesGroup.visible,
+        altitudeVisible: altitudeGroup.visible,
+        photoelectronsVisible: photoelectronGroup.visible,
+      });
+
+      new THREE.TextureLoader().load(TEXTURE_URL, makeEarthPatch);
+      fRegionGroup.visible = document.querySelector("#fRegionToggle").checked;
+      photoelectronGroup.visible = document.querySelector("#photoelectronToggle").checked;
+      setWestView();
+
+      function resize() {
+        camera.aspect = innerWidth / innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(innerWidth, innerHeight);
+      }
+      addEventListener("resize", resize);
+
+      const clock = new THREE.Clock();
+      function animate() {
+        const dt = Math.min(clock.getDelta(), 0.05);
+        updateKeyboardView(dt);
+        if (photoelectronGroup.visible) updatePhotoelectrons(dt);
+        renderer.render(scene, camera);
+        requestAnimationFrame(animate);
+      }
+      animate();
+    </script>
+  </body>
+</html>
