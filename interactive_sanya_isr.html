@@ -28,7 +28,7 @@
       .toolbar {
         position: fixed;
         left: 16px;
-        top: 16px;
+        bottom: 16px;
         display: grid;
         gap: 10px;
         width: min(310px, calc(100vw - 32px));
@@ -47,6 +47,7 @@
         height: 34px;
         padding: 3px;
         border-radius: 50%;
+        overflow: hidden;
         display: grid;
         place-items: center;
       }
@@ -55,6 +56,7 @@
         width: 100%;
         height: 100%;
         object-fit: contain;
+        border-radius: 50%;
         pointer-events: none;
       }
 
@@ -185,7 +187,7 @@
       </div>
     </section>
     <div class="readout">
-      Drag to change look direction. Scroll or use the zoom slider. Earth texture: NASA Blue Marble Next Generation. Magnetic field lines: IGRF14 via ppigrf, 2026-07-02. Script provenance: interactive_sanya_isr.html, export_sanya_igrf_fieldlines.py.
+      Earth texture: NASA Blue Marble Next Generation.
     </div>
 
     <script type="module">
@@ -1032,6 +1034,7 @@
         }
         toolbar.style.left = `${x}px`;
         toolbar.style.top = `${y}px`;
+        toolbar.style.bottom = "auto";
       });
       toolbar.addEventListener("pointerup", (event) => {
         if (!toolbarDrag || toolbarDrag.pointerId !== event.pointerId) return;
