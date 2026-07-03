@@ -194,6 +194,7 @@
       Earth texture: NASA Blue Marble Next Generation.
     </div>
 
+    <script src="./assets/tycho2_mag8_embedded.js"></script>
     <script type="module">
       import * as THREE from "three";
       import { SANYA_IGRF_FIELDLINES } from "./assets/sanya_igrf_fieldlines.js";
@@ -202,6 +203,7 @@
       const SANYA_LAT = 18.3;
       const SANYA_LON = 109.6;
       const TEXTURE_URL = "./assets/nasa_blue_marble_2004_12_5400x2700.jpg";
+      const EXPERIMENT_UTC = new Date("2023-09-18T22:30:00Z");
 
       const app = document.querySelector("#app");
       const scene = new THREE.Scene();
@@ -264,6 +266,49 @@
         Math.cos(latRad),
       );
 
+      function julianDate(date) {
+        return date.getTime() / 86400000 + 2440587.5;
+      }
+
+      function greenwichMeanSiderealTime(jd) {
+        const t = (jd - 2451545.0) / 36525;
+        const deg =
+          280.46061837 +
+          360.98564736629 * (jd - 2451545.0) +
+          0.000387933 * t * t -
+          (t * t * t) / 38710000;
+        return THREE.MathUtils.degToRad(THREE.MathUtils.euclideanModulo(deg, 360));
+      }
+
+      function eciToEcef(eci, gmst) {
+        const c = Math.cos(gmst);
+        const s = Math.sin(gmst);
+        return new THREE.Vector3(c * eci.x + s * eci.y, -s * eci.x + c * eci.y, eci.z);
+      }
+
+      function ecefToLocal(ecef) {
+        return new THREE.Vector3(ecef.dot(eastBasis), ecef.dot(northBasis), ecef.dot(up));
+      }
+
+      function sunDirectionEcef(date) {
+        const jd = julianDate(date);
+        const n = jd - 2451545.0;
+        const meanLon = THREE.MathUtils.degToRad(THREE.MathUtils.euclideanModulo(280.460 + 0.9856474 * n, 360));
+        const anomaly = THREE.MathUtils.degToRad(THREE.MathUtils.euclideanModulo(357.528 + 0.9856003 * n, 360));
+        const lambda = meanLon + THREE.MathUtils.degToRad(1.915) * Math.sin(anomaly) + THREE.MathUtils.degToRad(0.020) * Math.sin(2 * anomaly);
+        const obliquity = THREE.MathUtils.degToRad(23.439 - 0.0000004 * n);
+        const sunEci = new THREE.Vector3(
+          Math.cos(lambda),
+          Math.cos(obliquity) * Math.sin(lambda),
+          Math.sin(obliquity) * Math.sin(lambda),
+        ).normalize();
+        return eciToEcef(sunEci, greenwichMeanSiderealTime(jd)).normalize();
+      }
+
+      const experimentGmst = greenwichMeanSiderealTime(julianDate(EXPERIMENT_UTC));
+      const sunLocal = ecefToLocal(sunDirectionEcef(EXPERIMENT_UTC)).normalize();
+      dirLight.position.copy(sunLocal.clone().multiplyScalar(2500));
+
       function localToLatLon(eastKm, northKm) {
         const p = up
           .clone()
@@ -299,6 +344,7 @@
         const geometry = new THREE.PlaneGeometry(eastMax - eastMin, northMax - northMin, widthSegments, heightSegments);
         const pos = geometry.attributes.position;
         const uv = geometry.attributes.uv;
+        const colors = [];
 
         for (let i = 0; i < pos.count; i += 1) {
           const eastKm = eastMin + ((pos.getX(i) + (eastMax - eastMin) / 2) / (eastMax - eastMin)) * (eastMax - eastMin);
@@ -308,21 +354,73 @@
           const ll = localToLatLon(eastKm, northKm);
           const [u, v] = uvFromLatLon(ll.lat, ll.lon);
           uv.setXY(i, u, v);
+          const normal = new THREE.Vector3(-eastKm / EARTH_RADIUS_KM, -northKm / EARTH_RADIUS_KM, 1).normalize();
+          const day = THREE.MathUtils.smoothstep(normal.dot(sunLocal), -0.10, 0.16);
+          const shade = 0.13 + 0.87 * day;
+          colors.push(shade, shade, shade + 0.025 * (1 - day));
         }
 
+        geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
         geometry.computeVertexNormals();
         texture.colorSpace = THREE.SRGBColorSpace;
         texture.flipY = true;
         texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
-        const material = new THREE.MeshStandardMaterial({
+        const material = new THREE.MeshBasicMaterial({
           map: texture,
-          roughness: 0.85,
-          metalness: 0,
+          vertexColors: true,
           side: THREE.DoubleSide,
         });
         const mesh = new THREE.Mesh(geometry, material);
         mesh.name = "NASA Blue Marble local Earth surface";
         root.add(mesh);
+      }
+
+      function base64ToFloat32(base64) {
+        const binary = atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+        return new Float32Array(bytes.buffer);
+      }
+
+      function makeStarField() {
+        const catalog = window.TYCHO_STAR_CATALOG;
+        if (!catalog?.base64Float32) return;
+
+        const records = base64ToFloat32(catalog.base64Float32);
+        const radiusKm = 9000;
+        const positions = [];
+        const colors = [];
+        const count = Math.min(catalog.metadata?.count ?? records.length / 3, records.length / 3);
+
+        for (let i = 0; i < count; i += 1) {
+          const raHours = records[i * 3];
+          const decDeg = records[i * 3 + 1];
+          const mag = records[i * 3 + 2];
+          const ra = (raHours * Math.PI) / 12;
+          const dec = THREE.MathUtils.degToRad(decDeg);
+          const cosDec = Math.cos(dec);
+          const eci = new THREE.Vector3(cosDec * Math.cos(ra), cosDec * Math.sin(ra), Math.sin(dec));
+          const local = ecefToLocal(eciToEcef(eci, experimentGmst)).normalize().multiplyScalar(radiusKm);
+          const brightness = THREE.MathUtils.clamp((8.2 - mag) / 6.2, 0.06, 1);
+          positions.push(local.x, local.y, local.z);
+          colors.push(brightness, brightness, Math.min(1, brightness * 1.08));
+        }
+
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+        geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+        const material = new THREE.PointsMaterial({
+          size: 1.7,
+          sizeAttenuation: false,
+          vertexColors: true,
+          transparent: true,
+          opacity: 0.9,
+          depthWrite: false,
+        });
+        const points = new THREE.Points(geometry, material);
+        points.name = "Tycho-2 stars at experiment time";
+        points.frustumCulled = false;
+        scene.add(points);
       }
 
       function makeFRegionHaze() {
@@ -1255,6 +1353,7 @@
       });
 
       new THREE.TextureLoader().load(TEXTURE_URL, makeEarthPatch);
+      makeStarField();
       makeSanyaRadar();
       fRegionGroup.visible = document.querySelector("#fRegionToggle").checked;
       beamGroup.visible = document.querySelector("#beamToggle").checked;
